@@ -1,11 +1,456 @@
 ---
-import Welcome from '../components/Welcome.astro';
-import Layout from '../layouts/Layout.astro';
-
-// Welcome to Astro! Wondering what to do next? Check out the Astro documentation at https://docs.astro.build
-// Don't want to use any of this? Delete everything in this file, the `assets`, `components`, and `layouts` directories, and start fresh.
 ---
 
-<Layout>
-	<Welcome />
-</Layout>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MINPAKU STOCK</title>
+
+<style>
+body{margin:0;background:#f6f0e8;font-family:sans-serif;padding:14px;color:#2f241c}
+.container{max-width:600px;margin:auto}
+.card{background:white;padding:16px;border-radius:18px;margin-bottom:14px;box-shadow:0 2px 10px rgba(0,0,0,.06)}
+input,select,textarea{width:100%;padding:15px;margin-bottom:12px;border:1px solid #ddd;border-radius:14px;box-sizing:border-box;font-size:16px}
+textarea{min-height:80px}
+button{border:none;padding:15px;border-radius:14px;cursor:pointer;font-size:16px;font-weight:bold}
+.add{width:100%;background:#2f241c;color:white}
+.update{width:100%;background:#7a5c3d;color:white;display:none}
+.cancel{width:100%;background:#eee;color:#2f241c;display:none;margin-top:10px}
+.delete{width:100%;background:#d33;color:white;margin-top:10px}
+.edit{width:100%;background:#b9976a;color:white;margin-top:10px}
+.csv{width:100%;background:#5c6f52;color:white}
+.backup{width:100%;background:#4d6f8f;color:white;margin-top:10px}
+.clear{width:100%;background:#888;color:white;margin-top:10px}
+.row{display:grid;grid-template-columns:1fr;gap:0}
+.controls{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.plus{background:#2f241c;color:white}
+.minus{background:#eee;color:#2f241c}
+.badge{display:inline-block;background:#f6f0e8;padding:6px 12px;border-radius:999px;font-size:12px;margin-right:5px}
+.alert{color:#d33;font-weight:bold}
+.ok{color:green;font-weight:bold}
+.title{font-size:30px;font-weight:bold}
+.subtitle{color:#777}
+h3{margin-top:8px}
+@media (min-width:600px){.row{grid-template-columns:1fr 1fr;gap:10px}}
+</style>
+</head>
+
+<body>
+<div class="container">
+
+  <div class="card">
+    <div class="title">MINPAKU STOCK</div>
+    <div class="subtitle">民泊備品管理アプリ</div>
+  </div>
+
+  <div class="card">
+    <input id="name" placeholder="備品名" />
+    <input id="property" placeholder="物件名 例：NUWA" />
+
+    <select id="category">
+      <option value="消耗品">消耗品</option>
+      <option value="リネン">リネン</option>
+      <option value="清掃用品">清掃用品</option>
+      <option value="アメニティ">アメニティ</option>
+      <option value="その他">その他</option>
+    </select>
+
+    <div class="row">
+      <input id="stock" type="number" placeholder="在庫数" />
+      <input id="minStock" type="number" placeholder="最低在庫" />
+    </div>
+
+    <input id="price" type="number" placeholder="単価 例：300" />
+    <textarea id="memo" placeholder="メモ 例：Amazonで購入、2階収納など"></textarea>
+
+    <button id="addBtn" class="add">追加</button>
+    <button id="updateBtn" class="update">更新する</button>
+    <button id="cancelBtn" class="cancel">編集をキャンセル</button>
+  </div>
+
+  <div class="card">
+    <h3>検索・絞り込み</h3>
+    <input id="searchInput" placeholder="備品名・メモで検索" />
+
+    <select id="propertyFilter">
+      <option value="all">すべての物件</option>
+    </select>
+
+    <select id="categoryFilter">
+      <option value="all">すべてのカテゴリ</option>
+      <option value="消耗品">消耗品</option>
+      <option value="リネン">リネン</option>
+      <option value="清掃用品">清掃用品</option>
+      <option value="アメニティ">アメニティ</option>
+      <option value="その他">その他</option>
+    </select>
+  </div>
+
+  <div id="summary" class="card"></div>
+
+  <div class="card">
+    <button id="csvBtn" class="csv">CSVダウンロード</button>
+    <button id="backupBtn" class="backup">バックアップ保存</button>
+    <input id="importFile" type="file" accept=".json" />
+    <button id="clearBtn" class="clear">全データ削除</button>
+  </div>
+
+  <div class="card">
+    <h3>発注が必要な備品</h3>
+    <div id="orderList"></div>
+  </div>
+
+  <div id="list"></div>
+
+</div>
+
+<script>
+const STORAGE_KEY = "stock-items-final";
+
+let items = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+let editingIndex = null;
+let currentProperty = "all";
+let currentCategory = "all";
+let searchText = "";
+
+const list = document.getElementById("list");
+const summary = document.getElementById("summary");
+const orderList = document.getElementById("orderList");
+
+const nameInput = document.getElementById("name");
+const propertyInput = document.getElementById("property");
+const categoryInput = document.getElementById("category");
+const stockInput = document.getElementById("stock");
+const minStockInput = document.getElementById("minStock");
+const priceInput = document.getElementById("price");
+const memoInput = document.getElementById("memo");
+
+const addBtn = document.getElementById("addBtn");
+const updateBtn = document.getElementById("updateBtn");
+const cancelBtn = document.getElementById("cancelBtn");
+const csvBtn = document.getElementById("csvBtn");
+const backupBtn = document.getElementById("backupBtn");
+const clearBtn = document.getElementById("clearBtn");
+const importFile = document.getElementById("importFile");
+
+const propertyFilter = document.getElementById("propertyFilter");
+const categoryFilter = document.getElementById("categoryFilter");
+const searchInput = document.getElementById("searchInput");
+
+function save(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+}
+
+function yen(num){
+  return "¥" + Number(num || 0).toLocaleString();
+}
+
+function clearForm(){
+  nameInput.value = "";
+  propertyInput.value = "";
+  stockInput.value = "";
+  minStockInput.value = "";
+  priceInput.value = "";
+  memoInput.value = "";
+  categoryInput.value = "消耗品";
+
+  editingIndex = null;
+  addBtn.style.display = "block";
+  updateBtn.style.display = "none";
+  cancelBtn.style.display = "none";
+}
+
+function getFilteredItems(){
+  return items
+    .map((item,index)=>({item,index}))
+    .filter(({item})=>{
+      const propertyOk =
+        currentProperty === "all" ||
+        (item.property || "未設定") === currentProperty;
+
+      const categoryOk =
+        currentCategory === "all" ||
+        item.category === currentCategory;
+
+      const text = `${item.name} ${item.memo || ""}`.toLowerCase();
+      const searchOk = text.includes(searchText.toLowerCase());
+
+      return propertyOk && categoryOk && searchOk;
+    });
+}
+
+function renderPropertyFilter(){
+  const properties = [...new Set(items.map(item=>item.property || "未設定"))];
+
+  propertyFilter.innerHTML = `<option value="all">すべての物件</option>`;
+
+  properties.forEach(property=>{
+    const option = document.createElement("option");
+    option.value = property;
+    option.textContent = property;
+    propertyFilter.appendChild(option);
+  });
+
+  propertyFilter.value = currentProperty;
+}
+
+function render(){
+  renderPropertyFilter();
+
+  orderList.innerHTML = "";
+  list.innerHTML = "";
+
+  const filteredData = getFilteredItems();
+  const filteredItems = filteredData.map(data=>data.item);
+
+  const totalValue = filteredItems.reduce((sum,item)=>{
+    return sum + Number(item.stock || 0) * Number(item.price || 0);
+  },0);
+
+  const alertItems = filteredItems.filter(item=>{
+    return Number(item.stock || 0) <= Number(item.minStock || 0);
+  });
+
+  summary.innerHTML = `
+    <h3>まとめ</h3>
+    <p>表示件数：${filteredItems.length}件</p>
+    <p>在庫金額：${yen(totalValue)}</p>
+    <p>発注必要：${alertItems.length}件</p>
+  `;
+
+  if(alertItems.length === 0){
+    orderList.innerHTML = "<p>発注が必要な備品はありません。</p>";
+  }else{
+    alertItems.forEach(item=>{
+      const p = document.createElement("p");
+      p.innerHTML = `⚠ ${item.property || "未設定"} / ${item.name}：在庫 ${item.stock} / 最低 ${item.minStock}`;
+      orderList.appendChild(p);
+    });
+  }
+
+  filteredData.forEach(({item,index})=>{
+    const isLow = Number(item.stock || 0) <= Number(item.minStock || 0);
+
+    const div = document.createElement("div");
+    div.className = "card";
+
+    div.innerHTML = `
+      <span class="badge">${item.property || "未設定"}</span>
+      <span class="badge">${item.category}</span>
+
+      <h3>${item.name}</h3>
+      <p>在庫数：${item.stock}</p>
+      <p>最低在庫：${item.minStock}</p>
+      <p>単価：${yen(item.price)}</p>
+      <p>在庫金額：${yen(Number(item.stock || 0) * Number(item.price || 0))}</p>
+      <p>${isLow ? '<span class="alert">⚠ 発注必要</span>' : '<span class="ok">在庫OK</span>'}</p>
+      ${item.memo ? `<p>メモ：${item.memo}</p>` : ""}
+
+      <div class="controls">
+        <button class="minus" onclick="minusStock(${index})">−1</button>
+        <button class="plus" onclick="plusStock(${index})">＋1</button>
+      </div>
+
+      <button class="edit" onclick="editItem(${index})">編集</button>
+      <button class="delete" onclick="deleteItem(${index})">削除</button>
+    `;
+
+    list.appendChild(div);
+  });
+}
+
+propertyFilter.addEventListener("change",()=>{
+  currentProperty = propertyFilter.value;
+  render();
+});
+
+categoryFilter.addEventListener("change",()=>{
+  currentCategory = categoryFilter.value;
+  render();
+});
+
+searchInput.addEventListener("input",()=>{
+  searchText = searchInput.value;
+  render();
+});
+
+window.editItem = function(index){
+  const item = items[index];
+
+  editingIndex = index;
+
+  nameInput.value = item.name;
+  propertyInput.value = item.property || "";
+  categoryInput.value = item.category;
+  stockInput.value = item.stock;
+  minStockInput.value = item.minStock;
+  priceInput.value = item.price;
+  memoInput.value = item.memo || "";
+
+  addBtn.style.display = "none";
+  updateBtn.style.display = "block";
+  cancelBtn.style.display = "block";
+
+  window.scrollTo({top:0, behavior:"smooth"});
+};
+
+updateBtn.addEventListener("click",()=>{
+  if(editingIndex === null) return;
+
+  const name = nameInput.value.trim();
+
+  if(!name){
+    alert("備品名を入力してください");
+    return;
+  }
+
+  items[editingIndex] = {
+    name,
+    property: propertyInput.value.trim() || "未設定",
+    category: categoryInput.value,
+    stock: stockInput.value || 0,
+    minStock: minStockInput.value || 0,
+    price: priceInput.value || 0,
+    memo: memoInput.value.trim()
+  };
+
+  save();
+  clearForm();
+  render();
+});
+
+cancelBtn.addEventListener("click",()=>{
+  clearForm();
+});
+
+window.plusStock = function(index){
+  items[index].stock = Number(items[index].stock || 0) + 1;
+  save();
+  render();
+};
+
+window.minusStock = function(index){
+  items[index].stock = Math.max(0, Number(items[index].stock || 0) - 1);
+  save();
+  render();
+};
+
+window.deleteItem = function(index){
+  if(!confirm("この備品を削除しますか？")) return;
+  items.splice(index,1);
+  save();
+  render();
+};
+
+addBtn.addEventListener("click",()=>{
+  const name = nameInput.value.trim();
+
+  if(!name){
+    alert("備品名を入力してください");
+    return;
+  }
+
+  items.push({
+    name,
+    property: propertyInput.value.trim() || "未設定",
+    category: categoryInput.value,
+    stock: stockInput.value || 0,
+    minStock: minStockInput.value || 0,
+    price: priceInput.value || 0,
+    memo: memoInput.value.trim()
+  });
+
+  save();
+  clearForm();
+  render();
+});
+
+csvBtn.addEventListener("click",()=>{
+  const filteredItems = getFilteredItems().map(data=>data.item);
+
+  if(filteredItems.length === 0){
+    alert("出力するデータがありません");
+    return;
+  }
+
+  const header = ["物件名","カテゴリ","備品名","在庫数","最低在庫","単価","在庫金額","メモ"];
+
+  const rows = filteredItems.map(item=>[
+    item.property || "未設定",
+    item.category,
+    item.name,
+    item.stock,
+    item.minStock,
+    item.price,
+    Number(item.stock || 0) * Number(item.price || 0),
+    item.memo || ""
+  ]);
+
+  const csvText = [header, ...rows]
+    .map(row=>row.map(value=>`"${String(value).replaceAll('"','""')}"`).join(","))
+    .join("\n");
+
+  const blob = new Blob(["\uFEFF" + csvText], {type:"text/csv;charset=utf-8;"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+
+  a.href = url;
+  a.download = "minpaku-stock.csv";
+  a.click();
+
+  URL.revokeObjectURL(url);
+});
+
+backupBtn.addEventListener("click",()=>{
+  const blob = new Blob([JSON.stringify(items,null,2)], {type:"application/json"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+
+  a.href = url;
+  a.download = "minpaku-stock-backup.json";
+  a.click();
+
+  URL.revokeObjectURL(url);
+});
+
+importFile.addEventListener("change",(event)=>{
+  const file = event.target.files[0];
+  if(!file) return;
+
+  const reader = new FileReader();
+
+  reader.onload = ()=>{
+    try{
+      const data = JSON.parse(reader.result);
+
+      if(!Array.isArray(data)){
+        alert("読み込めないファイルです");
+        return;
+      }
+
+      items = data;
+      save();
+      render();
+      alert("バックアップを読み込みました");
+    }catch{
+      alert("読み込みに失敗しました");
+    }
+  };
+
+  reader.readAsText(file);
+});
+
+clearBtn.addEventListener("click",()=>{
+  if(!confirm("すべてのデータを削除しますか？")) return;
+
+  items = [];
+  save();
+  clearForm();
+  render();
+});
+
+render();
+</script>
+</body>
+</html>
